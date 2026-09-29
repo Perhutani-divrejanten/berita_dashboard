@@ -19,7 +19,7 @@ jobs:
           username: ${{ secrets.SFTP_USERNAME }}
           port: ${{ secrets.SFTP_PORT }}
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          password: ${{ secrets.SSH_PASSPHRASE }}
           local_path: './*'
           remote_path: '/home/jabarinf/berita_dashboard'
           sftp_only: true
@@ -32,7 +32,7 @@ jobs:
           username: ${{ secrets.SFTP_USERNAME }}
           port: ${{ secrets.SFTP_PORT }}
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          password: ${{ secrets.SSH_PASSPHRASE }}
           local_path: './public/*'
           remote_path: '/home/jabarinf/dashboard_jabarinfo.id'
           sftp_only: true
