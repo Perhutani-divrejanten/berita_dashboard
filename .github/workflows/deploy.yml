@@ -8,70 +8,30 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      SFTP_SERVER: ${{ secrets.SFTP_SERVER }}
-      SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
-      SFTP_PORT: ${{ secrets.SFTP_PORT }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
-      REMOTE_APP_PATH: /home/jabarinf/berita_dashboard
-      REMOTE_PUBLIC_PATH: /home/jabarinf/dashboard_jabarinfo.id
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup SSH key and known_hosts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-          ssh-keyscan -H -p "${SFTP_PORT}" "${SFTP_SERVER}" >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-          if [ -n "${SSH_PASSPHRASE}" ]; then
-            eval "$(ssh-agent -s)"
-            ssh-add ~/.ssh/id_ed25519 <<< "${SSH_PASSPHRASE}"
-          fi
-
-          echo "Testing SSH connection..."
-          ssh -p "${SFTP_PORT}" \
-            -i ~/.ssh/id_ed25519 \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${SFTP_USERNAME}@${SFTP_SERVER}" "echo 'SSH OK'"
-
       - name: Deploy Core Files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rsync -avz --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.env' \
-            --exclude='node_modules' \
-            --exclude='vendor' \
-            --exclude='storage' \
-            --exclude='bootstrap/cache' \
-            -e "ssh -p ${SFTP_PORT} -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts" \
-            ./ "${SFTP_USERNAME}@${SFTP_SERVER}:${REMOTE_APP_PATH}/"
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_SERVER }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          port: ${{ secrets.SFTP_PORT }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          local_path: './*'
+          remote_path: '/home/jabarinf/berita_dashboard'
+          sftp_only: true
+          delete_remote_files: false
 
       - name: Deploy Public Files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rsync -avz --delete \
-            --exclude='.git' \
-            --exclude='.env' \
-            --exclude='node_modules' \
-            --exclude='storage' \
-            -e "ssh -p ${SFTP_PORT} -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts" \
-            ./public/ "${SFTP_USERNAME}@${SFTP_SERVER}:${REMOTE_PUBLIC_PATH}/"
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_SERVER }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          port: ${{ secrets.SFTP_PORT }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          local_path: './public/*'
+          remote_path: '/home/jabarinf/dashboard_jabarinfo.id'
+          sftp_only: true
+          delete_remote_files: true
