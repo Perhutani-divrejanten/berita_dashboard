@@ -16,16 +16,20 @@ jobs:
       SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH key
+      - name: Setup SSH key and known_hosts
         shell: bash
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan -H -p "${SFTP_PORT}" "${SFTP_SERVER}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
           if [ -n "$SSH_PASSPHRASE" ]; then
             eval "$(ssh-agent -s)"
@@ -35,20 +39,24 @@ jobs:
       - name: Deploy Core Files
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           rsync -avz --delete \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='.env' \
             --exclude='node_modules' \
-            ./ "$SFTP_USERNAME@$SFTP_SERVER:/home/jabarinf/berita_dashboard/"
+            --exclude='vendor' \
+            --exclude='storage' \
+            -e "ssh -p ${SFTP_PORT} -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts" \
+            ./ "${SFTP_USERNAME}@${SFTP_SERVER}:/home/jabarinf/berita_dashboard/"
 
       - name: Deploy Public Files
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           rsync -avz --delete \
             --exclude='.git' \
             --exclude='.env' \
             --exclude='node_modules' \
-            ./public/ "$SFTP_USERNAME@$SFTP_SERVER:/home/jabarinf/dashboard_jabarinfo.id/"
+            -e "ssh -p ${SFTP_PORT} -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts" \
+            ./public/ "${SFTP_USERNAME}@${SFTP_SERVER}:/home/jabarinf/dashboard_jabarinfo.id/"
