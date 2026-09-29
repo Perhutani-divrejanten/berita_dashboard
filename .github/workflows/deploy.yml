@@ -1,0 +1,150 @@
+name: Deploy Laravel to cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate app before deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, bcmath, gd, pdo_mysql, zip, curl, intl, xml
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Copy env for CI
+        run: cp .env.example .env
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --no-suggest
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run Laravel tests
+        run: php artisan test
+
+      - name: Build frontend assets
+        run: npm run build
+
+  deploy:
+    name: Deploy to cPanel via SSH/SFTP
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, bcmath, gd, pdo_mysql, zip, curl, intl, xml
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install production dependencies
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress --no-suggest --no-dev --optimize-autoloader
+          npm ci
+          npm run build
+
+      - name: Configure SSH connection
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.CPANEL_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CPANEL_HOST }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy Laravel core to app root
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='node_modules' \
+            --exclude='vendor' \
+            --exclude='public/build' \
+            --exclude='storage' \
+            --exclude='bootstrap/cache' \
+            --exclude='storage/logs' \
+            --exclude='phpunit.xml' \
+            --exclude='composer.lock' \
+            --exclude='package-lock.json' \
+            --exclude='README.md' \
+            ./ "${{ secrets.CPANEL_SSH_USERNAME }}@${{ secrets.CPANEL_HOST }}:${{ secrets.LARAVEL_APP_ROOT }}/"
+
+      - name: Deploy public files to document root
+        run: |
+          rsync -avz --delete \
+            ./public/ \
+            "${{ secrets.CPANEL_SSH_USERNAME }}@${{ secrets.CPANEL_HOST }}:${{ secrets.PUBLIC_ROOT }}/"
+
+      - name: Deploy built Vite assets to document root
+        run: |
+          rsync -avz --delete \
+            ./public/build/ \
+            "${{ secrets.CPANEL_SSH_USERNAME }}@${{ secrets.CPANEL_HOST }}:${{ secrets.PUBLIC_ROOT }}/build/"
+
+      - name: Run post-deploy remote commands
+        env:
+          APP_ROOT: ${{ secrets.LARAVEL_APP_ROOT }}
+          PUBLIC_ROOT: ${{ secrets.PUBLIC_ROOT }}
+          APP_ROOT_RELATIVE: ${{ secrets.LARAVEL_APP_ROOT_RELATIVE }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -p "${{ secrets.CPANEL_SSH_PORT }}" "${{ secrets.CPANEL_SSH_USERNAME }}@${{ secrets.CPANEL_HOST }}" bash -s <<'REMOTE'
+            set -euo pipefail
+
+            APP_ROOT="${APP_ROOT}"
+            PUBLIC_ROOT="${PUBLIC_ROOT}"
+            APP_ROOT_RELATIVE="${APP_ROOT_RELATIVE}"
+
+            [ -d "$APP_ROOT" ] || { echo "Laravel app root tidak ditemukan: $APP_ROOT"; exit 1; }
+            [ -d "$PUBLIC_ROOT" ] || { echo "Public document root tidak ditemukan: $PUBLIC_ROOT"; exit 1; }
+            [ -f "$APP_ROOT/.env" ] || { echo "Harap buat .env production di server di $APP_ROOT sebelum deploy."; exit 1; }
+
+            mkdir -p "$APP_ROOT/storage/logs" "$APP_ROOT/storage/framework/cache" "$APP_ROOT/bootstrap/cache"
+            chmod -R 775 "$APP_ROOT/storage" "$APP_ROOT/bootstrap/cache"
+            find "$APP_ROOT/storage" -type d -exec chmod 775 {} \;
+            find "$APP_ROOT/storage" -type f -exec chmod 664 {} \;
+            find "$APP_ROOT/bootstrap/cache" -type d -exec chmod 775 {} \;
+            find "$APP_ROOT/bootstrap/cache" -type f -exec chmod 664 {} \;
+
+            cd "$APP_ROOT"
+            php artisan storage:link || true
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan optimize || true
+
+            if [ -f "$PUBLIC_ROOT/index.php" ]; then
+              perl -0pi -e "s#require __DIR__\\.'/../vendor/autoload.php';#require __DIR__.'/../${APP_ROOT_RELATIVE}/vendor/autoload.php';#g" "$PUBLIC_ROOT/index.php"
+              perl -0pi -e "s#\$app = require_once __DIR__\\.'/../bootstrap/app.php';#\$app = require_once __DIR__.'/../${APP_ROOT_RELATIVE}/bootstrap/app.php';#g" "$PUBLIC_ROOT/index.php"
+            fi
+
+            echo "Deployment Laravel cPanel selesai."
+          REMOTE

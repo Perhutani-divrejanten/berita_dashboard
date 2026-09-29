@@ -1,0 +1,4 @@
+import{t as e}from"./app-DJNBU_8V.js";var t=e();function n({value:e,onChange:n,placeholder:r=`Cari...`,className:i=``}){return(0,t.jsxs)(`div`,{className:`relative ${i}`,children:[(0,t.jsx)(`span`,{className:`absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400 pointer-events-none`,children:(0,t.jsx)(`svg`,{className:`w-4 h-4`,fill:`none`,stroke:`currentColor`,viewBox:`0 0 24 24`,strokeWidth:`2`,children:(0,t.jsx)(`path`,{strokeLinecap:`round`,strokeLinejoin:`round`,d:`M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z`})})}),(0,t.jsx)(`input`,{type:`text`,value:e,onChange:e=>n(e.target.value),placeholder:r,className:`w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg
+                    bg-white placeholder-gray-400
+                    focus:outline-none focus:ring-2 focus:ring-perhutani-600 focus:border-transparent
+                    hover:border-gray-400 transition`})]})}export{n as t};

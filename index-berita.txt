@@ -1,0 +1,328 @@
+﻿import { useEffect, useRef, useState } from 'react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import PageHeader from '@/Components/PageHeader';
+import SearchInput from '@/Components/SearchInput';
+import Badge from '@/Components/Badge';
+import EmptyState from '@/Components/EmptyState';
+
+export default function BeritaIndex({ beritas, categories, filters }) {
+    const { auth } = usePage().props;
+    const canManage = ['admin', 'editor'].includes(auth?.user?.role);
+    const [search, setSearch] = useState(filters?.search ?? '');
+    const [category, setCategory] = useState(filters?.category ?? 'all');
+    const [status, setStatus] = useState(filters?.status ?? 'all');
+    const [deletingId, setDeletingId] = useState(null);
+    const searchTimeout = useRef(null);
+
+    useEffect(() => {
+        const refresh = window.setInterval(() => {
+            router.reload({ only: ['beritas', 'categories', 'filters'] });
+        }, 30000);
+
+        return () => {
+            window.clearInterval(refresh);
+            clearTimeout(searchTimeout.current);
+        };
+    }, []);
+
+    // Debounce search â€” tunggu 400ms setelah user berhenti mengetik
+    const handleSearchChange = (value) => {
+        setSearch(value);
+        clearTimeout(searchTimeout.current);
+        searchTimeout.current = setTimeout(() => {
+            applyFilters({ search: value, category, status });
+        }, 400);
+    };
+
+    const handleCategoryChange = (value) => {
+        setCategory(value);
+        applyFilters({ search, category: value, status });
+    };
+
+    const handleStatusChange = (value) => {
+        setStatus(value);
+        applyFilters({ search, category, status: value });
+    };
+
+    const applyFilters = (params) => {
+        router.get(route('berita.index'), params, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
+    const handleDelete = (id, title) => {
+        if (!confirm(`Hapus berita "${title}"?\n\nBerita akan dipindahkan ke arsip (soft delete).`)) {
+            return;
+        }
+
+        router.delete(route('berita.destroy', id), {
+            preserveScroll: true,
+            onStart: () => setDeletingId(id),
+            onError: (errors) => {
+                console.error('âŒ Gagal hapus:', errors);
+                alert('Gagal menghapus. Coba lagi.');
+            },
+            onFinish: () => setDeletingId(null),
+        });
+    };
+
+    // Helper: warna badge sesuai status
+    const statusBadge = (isPublished) =>
+        isPublished
+            ? { label: 'Terbit', color: 'green' }
+            : { label: 'Draft', color: 'amber' };
+
+    return (
+        <AuthenticatedLayout title="Berita">
+            <Head title="Berita" />
+
+            <div className="max-w-7xl mx-auto">
+                <PageHeader
+                    title="Manajemen Berita"
+                    subtitle="Kelola semua berita Perhutani Janten di sini"
+                    action={{
+                        href: route('berita.create'),
+                        label: 'Tambah Berita',
+                        icon: (
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                        ),
+                    }}
+                />
+
+                {/* Filter bar */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-4">
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <SearchInput
+                            value={search}
+                            onChange={handleSearchChange}
+                            placeholder="Cari judul, ringkasan, atau penulis..."
+                        />
+
+                        <select
+                            value={status}
+                            onChange={(e) => handleStatusChange(e.target.value)}
+                            className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg bg-white
+                                focus:outline-none focus:ring-2 focus:ring-perhutani-600 hover:border-gray-400 transition"
+                        >
+                            <option value="all">Semua Status</option>
+                            <option value="published">Terbit</option>
+                            <option value="draft">Draft</option>
+                        </select>
+
+                        <select
+                            value={category}
+                            onChange={(e) => handleCategoryChange(e.target.value)}
+                            className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg bg-white
+                                focus:outline-none focus:ring-2 focus:ring-perhutani-600 hover:border-gray-400 transition"
+                        >
+                            <option value="all">Semua Kategori</option>
+                            {categories.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Table */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    {beritas.data.length === 0 ? (
+                        <EmptyState
+                            title="Tidak ada berita"
+                            description={
+                                search || category !== 'all' || status !== 'all'
+                                    ? 'Coba ubah filter atau kata kunci pencarian.'
+                                    : 'Mulai dengan menambahkan berita pertama.'
+                            }
+                            action={
+                                <Link
+                                    href={route('berita.create')}
+                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-perhutani-700 hover:bg-perhutani-800 text-white text-sm font-semibold transition"
+                                >
+                                    Tambah Berita Pertama
+                                </Link>
+                            }
+                        />
+                    ) : (
+                        <>
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                                Judul
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                                                Kategori
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                                Status
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">
+                                                Penulis
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">
+                                                Tanggal
+                                            </th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                                Aksi
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {beritas.data.map((b) => {
+                                            const sb = statusBadge(b.is_published);
+                                            return (
+                                                <tr key={b.id} className="hover:bg-gray-50 transition">
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex items-center gap-3">
+                                                            {/* Thumbnail */}
+                                                            <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200">
+                                                                {b.image ? (
+                                                                    <img
+                                                                        src={`/storage/${b.image}`}
+                                                                        alt={b.title}
+                                                                        className="w-full h-full object-cover"
+                                                                        onError={(e) => {
+                                                                            e.currentTarget.style.display = 'none';
+                                                                            e.currentTarget.parentNode.innerHTML = '<div style="font-size:20px;text-align:center;line-height:48px">ðŸ“°</div>';
+                                                                        }}
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center text-gray-300 text-xl">
+                                                                        ðŸ“°
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="min-w-0">
+                                                                <div className="text-sm font-medium text-gray-800 max-w-md truncate">
+                                                                    {b.title}
+                                                                </div>
+                                                                <div className="text-xs text-gray-400 md:hidden mt-0.5">
+                                                                    {b.category} â€¢ {b.author}
+                                                                </div>
+                                                                {b.badge && (
+                                                                    <div className="text-[10px] text-perhutani-700 font-semibold mt-0.5">
+                                                                        {b.badge}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 hidden md:table-cell">
+                                                        <Badge color="indigo" size="sm">{b.category}</Badge>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <Badge color={sb.color} size="sm">{sb.label}</Badge>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
+                                                        {b.author}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">
+                                                        {new Date(b.date).toLocaleDateString('id-ID', {
+                                                            day: 'numeric', month: 'short', year: 'numeric',
+                                                        })}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            {/* Lihat */}
+                                                            <Link
+                                                                href={route('berita.show', b.id)}
+                                                                title="Lihat"
+                                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                </svg>
+                                                            </Link>
+                                                            {canManage && (
+                                                                <>
+                                                                    {/* Edit */}
+                                                                    <Link
+                                                                        href={route('berita.edit', b.id)}
+                                                                        title="Edit"
+                                                                        className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition"
+                                                                    >
+                                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                        </svg>
+                                                                    </Link>
+                                                                    {/* Hapus */}
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Hapus"
+                                                                        onClick={() => handleDelete(b.id, b.title)}
+                                                                        disabled={deletingId === b.id}
+                                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50 disabled:cursor-wait"
+                                                                    >
+                                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 01-1-1h-4a1 1 0 01-1 1v3M4 7h16" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Pagination (dari Laravel) */}
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50">
+                                <div className="text-xs text-gray-500">
+                                    Menampilkan <span className="font-semibold">{beritas.from ?? 0}</span>â€“<span className="font-semibold">{beritas.to ?? 0}</span> dari <span className="font-semibold">{beritas.total}</span> berita
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                    {beritas.links.map((link, i) => {
+                                        // Laravel kasih HTML entity, kita bersihkan
+                                        const label = link.label
+                                            .replace('&laquo;', 'Â«')
+                                            .replace('&raquo;', 'Â»')
+                                            .replace('Previous', 'â€¹')
+                                            .replace('Next', 'â€º');
+
+                                        if (!link.url) {
+                                            return (
+                                                <span
+                                                    key={i}
+                                                    className="px-3 py-1.5 text-sm rounded-md border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
+                                                    dangerouslySetInnerHTML={{ __html: label }}
+                                                />
+                                            );
+                                        }
+
+                                        const isActive = link.active;
+
+                                        return (
+                                            <Link
+                                                key={i}
+                                                href={link.url}
+                                                preserveScroll
+                                                className={`px-3 py-1.5 text-sm rounded-md border transition ${
+                                                    isActive
+                                                        ? 'bg-perhutani-700 border-perhutani-700 text-white'
+                                                        : 'bg-white border-gray-300 hover:bg-gray-100 text-gray-700'
+                                                }`}
+                                                dangerouslySetInnerHTML={{ __html: label }}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        </AuthenticatedLayout>
+    );
+}
